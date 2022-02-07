@@ -1,0 +1,16 @@
+domain: dana.io
+layout:
+- go.kubebuilder.io/v3
+projectName: home-assignment
+repo: home-assignment
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: dana.io
+  group: dana.io
+  kind: NamespaceLabel
+  path: home-assignment/api/v1alpha1
+  version: v1alpha1
+version: "3"
