@@ -25,18 +25,14 @@ import (
 
 // NamespaceLabelSpec defines the desired state of NamespaceLabel
 type NamespaceLabelSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// Foo is an example field of NamespaceLabel. Edit namespacelabel_types.go to remove/update
-
+	// Map of string keys and values that are used to add labels to namespace
 	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // NamespaceLabelStatus defines the observed state of NamespaceLabel
 type NamespaceLabelStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Map of currently active user-added labels on namespace
+	ActiveLabels map[string]string `json:"labels,omitempty"`
 }
 
 //+kubebuilder:object:root=true
