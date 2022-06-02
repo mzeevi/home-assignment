@@ -32,7 +32,7 @@ type NamespaceLabelSpec struct {
 // NamespaceLabelStatus defines the observed state of NamespaceLabel
 type NamespaceLabelStatus struct {
 	// Map of currently active user-added labels on namespace
-	ActiveLabels map[string]string `json:"labels,omitempty"`
+	ActiveLabels map[string]string `json:"activeLabels,omitempty"`
 }
 
 //+kubebuilder:object:root=true

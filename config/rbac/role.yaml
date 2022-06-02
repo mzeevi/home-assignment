@@ -32,3 +32,15 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - dana.io.dana.io
+  resources:
+  - namespaces
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch

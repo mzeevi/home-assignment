@@ -1,0 +1,8 @@
+apiVersion: dana.io.dana.io/v1alpha1
+kind: NamespaceLabel
+metadata:
+  name: namespacelabel-sample-2
+  namespace: default
+spec:
+  labels:
+    label_dfd: a

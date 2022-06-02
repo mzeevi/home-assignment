@@ -1,0 +1,28 @@
+
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  creationTimestamp: null
+  name: validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-dana-io-dana-io-v1alpha1-namespacelabel
+  failurePolicy: Fail
+  name: vnamespacelabel.kb.io
+  rules:
+  - apiGroups:
+    - dana.io.dana.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - namespacelabels
+  sideEffects: None
