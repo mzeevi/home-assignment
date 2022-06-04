@@ -18,7 +18,6 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 
 	// "strings"
 
@@ -33,7 +32,7 @@ import (
 	danaiov1alpha1 "home-assignment/api/v1alpha1"
 )
 
-// const protectedLabelDomain = "kubernetes.io"
+const ManangedByNamespaceLabelAnnotation = "dana.io/managed-by-namespacelabel"
 
 // NamespaceLabelReconciler reconciles a NamespaceLabel object
 type NamespaceLabelReconciler struct {
@@ -44,7 +43,7 @@ type NamespaceLabelReconciler struct {
 //+kubebuilder:rbac:groups=dana.io.dana.io,resources=namespacelabels,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=dana.io.dana.io,resources=namespacelabels/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=dana.io.dana.io,resources=namespacelabels/finalizers,verbs=update
-//+kubebuilder:rbac:groups=dana.io.dana.io,resources=namespaces,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=*,resources=namespaces,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -58,18 +57,6 @@ type NamespaceLabelReconciler struct {
 func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 	log.Info("Processing NamespaceLabelReconciler")
-
-	// fail if there are multiple (> 1) NamespaceLabel objects running at the same time
-	var namespaceLabelList danaiov1alpha1.NamespaceLabelList
-	if err := r.List(ctx, &namespaceLabelList, client.InNamespace(req.Namespace)); err != nil {
-		log.Error(err, "unable to list namespaceLabels")
-		return ctrl.Result{}, err
-	}
-
-	if len(namespaceLabelList.Items) > 1 {
-		errorMsg := fmt.Errorf("only one namespaceLabel object can be set on a namespace")
-		return ctrl.Result{}, errorMsg
-	}
 
 	// we'll fetch the NamespaceLabel using our client
 	var namespaceLabel danaiov1alpha1.NamespaceLabel
@@ -89,7 +76,7 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	reqLabels := namespaceLabel.Spec.Labels
 
 	// we'll fetch the current namespace using our client
-	var namespace v1.Namespace
+	namespace := v1.Namespace{}
 	curNamespacedName := types.NamespacedName{
 		Namespace: req.NamespacedName.Namespace,
 		Name:      req.NamespacedName.Namespace,
@@ -100,25 +87,20 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// kubernetes reserves all labels and annotations in the kubernetes.io namespace
-	// therefore we do not apply the changes the NamespaceLabel object requires
-	// if the list of labels includes such labels
-
-	// loop over the map to check if such labels exists
-	// for key := range reqLabels {
-	// 	labelDomain := strings.Split(key, "/")[0]
-	// 	if strings.HasSuffix(labelDomain, protectedLabelDomain) {
-	// 		errorMsg := fmt.Errorf("changing labels of the %s namespace is not allowed", protectedLabelDomain)
-	// 		return ctrl.Result{}, errorMsg
-	// 	}
-	// }
-
 	// set the namespace labels to match the request
 	namespace.ObjectMeta.Labels = reqLabels
 
+	// add annotation to namespace to indiciate its labels are managed
+	// an namespaceLabel object
+	if namespace.Annotations == nil {
+		namespace.Annotations = map[string]string{}
+	}
+
+	namespace.Annotations[ManangedByNamespaceLabelAnnotation] = "true"
+
 	// update the namespace with the new labels
 	if err := r.Update(ctx, &namespace); err != nil {
-		log.Error(err, "failed to update namespace", namespace.Name)
+		log.Error(err, "failed to update namespace")
 		return ctrl.Result{}, err
 	}
 

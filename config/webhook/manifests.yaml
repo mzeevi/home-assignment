@@ -23,6 +23,7 @@ webhooks:
     operations:
     - CREATE
     - UPDATE
+    - DELETE
     resources:
     - namespacelabels
   sideEffects: None

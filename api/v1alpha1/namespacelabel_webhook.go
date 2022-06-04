@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"strings"
 
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -32,6 +34,7 @@ import (
 // log is for logging in this package.
 var namespacelabellog = logf.Log.WithName("namespacelabel-resource")
 
+const ManangedByNamespaceLabelAnnotation = "dana.io/managed-by-namespacelabel"
 const protectedLabelDomain = "kubernetes.io"
 
 func (r *NamespaceLabel) SetupWebhookWithManager(mgr ctrl.Manager) error {
@@ -40,10 +43,8 @@ func (r *NamespaceLabel) SetupWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-// TODO(user): EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-
-// TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
-//+kubebuilder:webhook:path=/validate-dana-io-dana-io-v1alpha1-namespacelabel,mutating=false,failurePolicy=fail,sideEffects=None,groups=dana.io.dana.io,resources=namespacelabels,verbs=create;update,versions=v1alpha1,name=vnamespacelabel.kb.io,admissionReviewVersions=v1
+//+kubebuilder:webhook:path=/validate-dana-io-dana-io-v1alpha1-namespacelabel,mutating=false,failurePolicy=fail,sideEffects=None,groups=dana.io.dana.io,resources=namespacelabels,verbs=create;update;delete,versions=v1alpha1,name=vnamespacelabel.kb.io,admissionReviewVersions=v1
+//+kubebuilder:rbac:groups=*,resources=namespaces,verbs=get;list
 
 var _ webhook.Validator = &NamespaceLabel{}
 
@@ -57,14 +58,10 @@ func (r *NamespaceLabel) ValidateCreate() error {
 		return err
 	}
 
-	// fail if there are multiple (> 1) NamespaceLabel objects running at the same time
-	var namespaceLabelList NamespaceLabelList
-	if err := cl.List(context.Background(), &namespaceLabelList, client.InNamespace(r.ObjectMeta.Namespace)); err != nil {
-		namespacelabellog.Error(err, "unable to list namespaceLabels")
-		return err
-	}
+	namespace := v1.Namespace{}
+	r.GetNamespaceObject(&namespace, cl)
 
-	if len(namespaceLabelList.Items) > 1 {
+	if namespace.Annotations[ManangedByNamespaceLabelAnnotation] == "true" {
 		errorMsg := fmt.Errorf("only one namespaceLabel object can be set on a namespace")
 		return errorMsg
 	}
@@ -85,13 +82,30 @@ func (r *NamespaceLabel) ValidateUpdate(old runtime.Object) error {
 		errorMsg := fmt.Errorf("changing labels of the %s namespace is not allowed", protectedLabelDomain)
 		return errorMsg
 	}
-
 	return nil
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
 func (r *NamespaceLabel) ValidateDelete() error {
 	namespacelabellog.Info("validate delete", "name", r.Name)
+
+	cl, err := client.New(config.GetConfigOrDie(), client.Options{})
+	if err != nil {
+		namespacelabellog.Error(err, "failed to create client")
+		return err
+	}
+
+	namespace := v1.Namespace{}
+	r.GetNamespaceObject(&namespace, cl)
+
+	if namespace.Annotations != nil {
+		delete(namespace.Annotations, ManangedByNamespaceLabelAnnotation)
+	}
+
+	if err := cl.Update(context.Background(), &namespace); err != nil {
+		namespacelabellog.Error(err, "failed to update namespace")
+		return err
+	}
 
 	return nil
 }
@@ -104,4 +118,18 @@ func (r *NamespaceLabel) CheckLabelNS() bool {
 		}
 	}
 	return false
+}
+
+func (r *NamespaceLabel) GetNamespaceObject(ns *v1.Namespace, cl client.Client) error {
+	curNamespacedName := types.NamespacedName{
+		Namespace: r.ObjectMeta.Namespace,
+		Name:      r.ObjectMeta.Namespace,
+	}
+
+	if err := cl.Get(context.Background(), curNamespacedName, ns); err != nil {
+		namespacelabellog.Error(err, "unable to list namespaceLabelsList")
+		return err
+	}
+
+	return nil
 }
