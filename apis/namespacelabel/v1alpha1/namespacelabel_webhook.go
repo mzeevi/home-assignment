@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"strings"
 
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -34,7 +34,6 @@ import (
 // log is for logging in this package.
 var namespacelabellog = logf.Log.WithName("namespacelabel-resource")
 
-const ManangedByNamespaceLabelAnnotation = "dana.io/managed-by-namespacelabel"
 const protectedLabelDomain = "kubernetes.io"
 
 func (r *NamespaceLabel) SetupWebhookWithManager(mgr ctrl.Manager) error {
@@ -52,16 +51,25 @@ var _ webhook.Validator = &NamespaceLabel{}
 func (r *NamespaceLabel) ValidateCreate() error {
 	namespacelabellog.Info("validate create", "name", r.Name)
 
-	cl, err := client.New(config.GetConfigOrDie(), client.Options{})
+	scheme := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(AddToScheme(scheme))
+
+	cl, err := client.New(config.GetConfigOrDie(), client.Options{Scheme: scheme})
 	if err != nil {
 		namespacelabellog.Error(err, "failed to create client")
 		return err
 	}
 
-	namespace := v1.Namespace{}
-	r.GetNamespaceObject(&namespace, cl)
+	namespacelabelList := NamespaceLabelList{}
 
-	if namespace.Annotations[ManangedByNamespaceLabelAnnotation] == "true" {
+	if err := cl.List(context.Background(), &namespacelabelList); err != nil {
+		namespacelabellog.Error(err, "unable to list namespaceLabelsList")
+		return err
+	}
+	namespacelabellog.Info("Successfully listed")
+
+	if len(namespacelabelList.Items) > 0 {
 		errorMsg := fmt.Errorf("only one namespaceLabel object can be set on a namespace")
 		return errorMsg
 	}
@@ -89,24 +97,6 @@ func (r *NamespaceLabel) ValidateUpdate(old runtime.Object) error {
 func (r *NamespaceLabel) ValidateDelete() error {
 	namespacelabellog.Info("validate delete", "name", r.Name)
 
-	cl, err := client.New(config.GetConfigOrDie(), client.Options{})
-	if err != nil {
-		namespacelabellog.Error(err, "failed to create client")
-		return err
-	}
-
-	namespace := v1.Namespace{}
-	r.GetNamespaceObject(&namespace, cl)
-
-	if namespace.Annotations != nil {
-		delete(namespace.Annotations, ManangedByNamespaceLabelAnnotation)
-	}
-
-	if err := cl.Update(context.Background(), &namespace); err != nil {
-		namespacelabellog.Error(err, "failed to update namespace")
-		return err
-	}
-
 	return nil
 }
 
@@ -118,18 +108,4 @@ func (r *NamespaceLabel) CheckLabelNS() bool {
 		}
 	}
 	return false
-}
-
-func (r *NamespaceLabel) GetNamespaceObject(ns *v1.Namespace, cl client.Client) error {
-	curNamespacedName := types.NamespacedName{
-		Namespace: r.ObjectMeta.Namespace,
-		Name:      r.ObjectMeta.Namespace,
-	}
-
-	if err := cl.Get(context.Background(), curNamespacedName, ns); err != nil {
-		namespacelabellog.Error(err, "unable to list namespaceLabelsList")
-		return err
-	}
-
-	return nil
 }

@@ -19,20 +19,19 @@ package controllers
 import (
 	"context"
 
-	// "strings"
-
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	danaiov1alpha1 "home-assignment/api/v1alpha1"
+	danaiov1alpha1 "home-assignment/apis/namespacelabel/v1alpha1"
 )
 
-const ManangedByNamespaceLabelAnnotation = "dana.io/managed-by-namespacelabel"
+const NamespaceLabelFinalizer = "dana.io/namespacelabel-finalizer"
 
 // NamespaceLabelReconciler reconciles a NamespaceLabel object
 type NamespaceLabelReconciler struct {
@@ -87,16 +86,43 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// set the namespace labels to match the request
-	namespace.ObjectMeta.Labels = reqLabels
+	finalizerName := NamespaceLabelFinalizer
+	// examine DeletionTimestamp to determine if object is under deletion
+	if namespaceLabel.ObjectMeta.DeletionTimestamp.IsZero() {
+		// The object is not being deleted, so if it does not have our finalizer,
+		// then lets add the finalizer and update the object. This is equivalent
+		// registering our finalizer
+		if !controllerutil.ContainsFinalizer(&namespaceLabel, finalizerName) {
+			controllerutil.AddFinalizer(&namespaceLabel, finalizerName)
+			if err := r.Update(ctx, &namespaceLabel); err != nil {
+				log.Error(err, "failed to update namespaceLabel")
+				return ctrl.Result{}, err
+			}
+		}
+	} else {
+		// the object is being deleted
+		if controllerutil.ContainsFinalizer(&namespaceLabel, finalizerName) {
+			// our finalizer is present, so lets handle any external dependency
+			r.deleteLabels(&namespaceLabel, &namespace)
 
-	// add annotation to namespace to indiciate its labels are managed
-	// an namespaceLabel object
-	if namespace.Annotations == nil {
-		namespace.Annotations = map[string]string{}
+			// remove our finalizer from the list and update it
+			controllerutil.RemoveFinalizer(&namespaceLabel, finalizerName)
+			if err := r.Update(ctx, &namespaceLabel); err != nil {
+				log.Error(err, "failed to update namespaceLabel")
+				return ctrl.Result{}, err
+			}
+
+			if err := r.Update(ctx, &namespace); err != nil {
+				log.Error(err, "failed to update namespace")
+				return ctrl.Result{}, err
+			}
+		}
+		// stop reconciliation as the item is being deleted
+		return ctrl.Result{}, nil
 	}
 
-	namespace.Annotations[ManangedByNamespaceLabelAnnotation] = "true"
+	// set the namespace labels to match the request
+	namespace.ObjectMeta.Labels = reqLabels
 
 	// update the namespace with the new labels
 	if err := r.Update(ctx, &namespace); err != nil {
@@ -112,6 +138,14 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *NamespaceLabelReconciler) deleteLabels(namespaceLabel *danaiov1alpha1.NamespaceLabel, namespace *v1.Namespace) {
+	// delete the labels from the namespace
+	reqLabels := namespaceLabel.Spec.Labels
+	for key := range reqLabels {
+		delete(namespace.ObjectMeta.Labels, key)
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager.

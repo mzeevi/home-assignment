@@ -29,7 +29,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	danaiov1alpha1 "home-assignment/api/v1alpha1"
+	danaiov1alpha1 "home-assignment/apis/namespacelabel/v1alpha1"
 	//+kubebuilder:scaffold:imports
 )
 

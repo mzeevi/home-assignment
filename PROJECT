@@ -1,6 +1,7 @@
 domain: dana.io
 layout:
 - go.kubebuilder.io/v3
+multigroup: true
 projectName: home-assignment
 repo: home-assignment
 resources:
@@ -11,9 +12,8 @@ resources:
   domain: dana.io
   group: dana.io
   kind: NamespaceLabel
-  path: home-assignment/api/v1alpha1
+  path: home-assignment/apis/namespacelabel/v1alpha1
   version: v1alpha1
   webhooks:
     validation: true
     webhookVersion: v1
-version: "3"

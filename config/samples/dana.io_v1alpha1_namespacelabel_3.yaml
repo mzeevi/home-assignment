@@ -2,8 +2,8 @@ apiVersion: dana.io.dana.io/v1alpha1
 kind: NamespaceLabel
 metadata:
   name: namespacelabel-sample-3
-  namespace: default
+  namespace: home-assignment-system
 spec:
   labels:
     label_1: a
-    label_2_kubernetes.io: sd
+    label_2: sd

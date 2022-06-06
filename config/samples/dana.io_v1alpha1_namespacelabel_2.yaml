@@ -5,4 +5,4 @@ metadata:
   namespace: default
 spec:
   labels:
-    label_dfd: a
+    label_dfd_kubernetes.io: a
