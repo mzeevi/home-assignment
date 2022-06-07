@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"strings"
 
+	"k8s.io/api/node/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -50,12 +50,9 @@ var _ webhook.Validator = &NamespaceLabel{}
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *NamespaceLabel) ValidateCreate() error {
 	namespacelabellog.Info("validate create", "name", r.Name)
+	v1alpha1.AddToScheme(scheme.Scheme)
 
-	scheme := runtime.NewScheme()
-	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(AddToScheme(scheme))
-
-	cl, err := client.New(config.GetConfigOrDie(), client.Options{Scheme: scheme})
+	cl, err := client.New(config.GetConfigOrDie(), client.Options{Scheme: scheme.Scheme})
 	if err != nil {
 		namespacelabellog.Error(err, "failed to create client")
 		return err

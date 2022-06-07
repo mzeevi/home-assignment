@@ -42,7 +42,7 @@ type NamespaceLabelReconciler struct {
 //+kubebuilder:rbac:groups=dana.io.dana.io,resources=namespacelabels,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=dana.io.dana.io,resources=namespacelabels/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=dana.io.dana.io,resources=namespacelabels/finalizers,verbs=update
-//+kubebuilder:rbac:groups=*,resources=namespaces,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=*,resources=namespaces,verbs=get;list;watch;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -121,8 +121,14 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	// set the namespace labels to match the request
-	namespace.ObjectMeta.Labels = reqLabels
+	// add the namespace labels to match the request
+	if namespace.ObjectMeta.Labels == nil {
+		namespace.ObjectMeta.Labels = make(map[string]string)
+	}
+
+	for key, val := range reqLabels {
+		namespace.ObjectMeta.Labels[key] = val
+	}
 
 	// update the namespace with the new labels
 	if err := r.Update(ctx, &namespace); err != nil {
