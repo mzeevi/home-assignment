@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	configv1alpha1 "home-assignment/apis/config/v1alpha1"
 	danaiov1alpha1 "home-assignment/apis/namespacelabel/v1alpha1"
 	"home-assignment/controllers"
 	//+kubebuilder:scaffold:imports
@@ -45,6 +46,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(danaiov1alpha1.AddToScheme(scheme))
+	utilruntime.Must(configv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 

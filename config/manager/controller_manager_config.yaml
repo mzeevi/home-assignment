@@ -9,3 +9,4 @@ webhook:
 leaderElection:
   leaderElect: true
   resourceName: fe1da664.dana.io
+clusterName: example-test

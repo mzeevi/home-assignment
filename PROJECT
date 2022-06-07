@@ -17,3 +17,12 @@ resources:
   webhooks:
     validation: true
     webhookVersion: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: dana.io
+  group: config
+  kind: NamespacelabelConfig
+  path: home-assignment/apis/config/v1alpha1
+  version: v1alpha1
+version: "3"
