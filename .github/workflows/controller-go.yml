@@ -1,11 +1,11 @@
-name: namespaceLabel Controller workflow
+name: controller workflow
 on:
   push:
     branches:
-      - '*'
+      - 'master'
   pull_request:
     branches:
-      - '*'
+      - 'master'
 jobs:
   test_controller:
     strategy:
