@@ -21,8 +21,10 @@ import (
 	"fmt"
 	"strings"
 
-	"k8s.io/api/node/v1alpha1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,7 +36,9 @@ import (
 // log is for logging in this package.
 var namespacelabellog = logf.Log.WithName("namespacelabel-resource")
 
-const protectedLabelDomain = "kubernetes.io"
+const ControllerConfigMapName = "namespacelabel-controller-config"
+const CntrollerNamespace = "namespacelabel-system"
+const ControllerConfigMapKey = "MANAGEMENT_LABELS_DOMAINS"
 
 func (r *NamespaceLabel) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).
@@ -50,7 +54,7 @@ var _ webhook.Validator = &NamespaceLabel{}
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *NamespaceLabel) ValidateCreate() error {
 	namespacelabellog.Info("validate create", "name", r.Name)
-	v1alpha1.AddToScheme(scheme.Scheme)
+	utilruntime.Must(AddToScheme(scheme.Scheme))
 
 	cl, err := client.New(config.GetConfigOrDie(), client.Options{Scheme: scheme.Scheme})
 	if err != nil {
@@ -60,20 +64,19 @@ func (r *NamespaceLabel) ValidateCreate() error {
 
 	namespacelabelList := NamespaceLabelList{}
 
-	if err := cl.List(context.Background(), &namespacelabelList); err != nil {
+	if err := cl.List(context.Background(), &namespacelabelList, client.InNamespace(r.ObjectMeta.Namespace)); err != nil {
 		namespacelabellog.Error(err, "unable to list namespaceLabelsList")
 		return err
 	}
 	namespacelabellog.Info("Successfully listed")
 
 	if len(namespacelabelList.Items) > 0 {
-		errorMsg := fmt.Errorf("only one namespaceLabel object can be set on a namespace")
+		errorMsg := fmt.Errorf("only one namespaceLabel object can be set on namespace %v", r.ObjectMeta.Namespace)
 		return errorMsg
 	}
 
-	if r.CheckLabelNS() {
-		errorMsg := fmt.Errorf("changing labels of the %s namespace is not allowed", protectedLabelDomain)
-		return errorMsg
+	if err := r.CheckLabelNS(cl); err != nil {
+		return err
 	}
 
 	return nil
@@ -82,12 +85,15 @@ func (r *NamespaceLabel) ValidateCreate() error {
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *NamespaceLabel) ValidateUpdate(old runtime.Object) error {
 	namespacelabellog.Info("validate update", "name", r.Name)
+	utilruntime.Must(AddToScheme(scheme.Scheme))
 
-	if r.CheckLabelNS() {
-		errorMsg := fmt.Errorf("changing labels of the %s namespace is not allowed", protectedLabelDomain)
-		return errorMsg
+	cl, err := client.New(config.GetConfigOrDie(), client.Options{Scheme: scheme.Scheme})
+	if err != nil {
+		namespacelabellog.Error(err, "failed to create client")
+		return err
 	}
-	return nil
+
+	return r.CheckLabelNS(cl)
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
@@ -97,12 +103,27 @@ func (r *NamespaceLabel) ValidateDelete() error {
 	return nil
 }
 
-func (r *NamespaceLabel) CheckLabelNS() bool {
+func (r *NamespaceLabel) CheckLabelNS(cl client.Client) error {
+	// get controller config map
+	confMap := v1.ConfigMap{}
+	cmNamespacedName := types.NamespacedName{
+		Namespace: CntrollerNamespace,
+		Name:      ControllerConfigMapName,
+	}
+	if err := cl.Get(context.Background(), cmNamespacedName, &confMap); err != nil {
+		namespacelabellog.Error(err, "unable to fetch configmap")
+		return err
+	}
+
+	protectedDomains := strings.Split(confMap.Data[ControllerConfigMapKey], ",")
 	for key := range r.Spec.Labels {
-		labelDomain := strings.Split(key, "/")[0]
-		if strings.HasSuffix(labelDomain, protectedLabelDomain) {
-			return true
+		reqlabelDomain := strings.Split(key, "/")[0]
+		for _, dom := range protectedDomains {
+			if strings.HasSuffix(reqlabelDomain, dom) {
+				errorMsg := fmt.Errorf("setting labels of the %s domain is not allowed", dom)
+				return errorMsg
+			}
 		}
 	}
-	return false
+	return nil
 }

@@ -76,12 +76,12 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// we'll fetch the current namespace using our client
 	namespace := v1.Namespace{}
-	curNamespacedName := types.NamespacedName{
+	nsNamespacedName := types.NamespacedName{
 		Namespace: req.NamespacedName.Namespace,
 		Name:      req.NamespacedName.Namespace,
 	}
 
-	if err := r.Get(ctx, curNamespacedName, &namespace); err != nil {
+	if err := r.Get(ctx, nsNamespacedName, &namespace); err != nil {
 		log.Error(err, "unable to fetch namespace")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}

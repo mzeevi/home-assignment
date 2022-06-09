@@ -1,6 +1,0 @@
-apiVersion: config.dana.io/v1alpha1
-kind: NamespacelabelConfig
-metadata:
-  name: namespacelabelconfig-sample
-spec:
-  # TODO(user): Add fields here
