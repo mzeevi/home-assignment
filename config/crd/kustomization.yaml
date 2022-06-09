@@ -3,7 +3,6 @@
 # It should be run by config/default
 resources:
 - bases/dana.io.dana.io_namespacelabels.yaml
-- bases/config.dana.io_namespacelabelconfigs.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:

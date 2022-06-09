@@ -6,7 +6,6 @@ make: Entering directory '/home/user/home-assignment'
 /home/user/home-assignment/bin/controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
 go fmt ./...
 go vet ./...
- 
 go build -o bin/manager main.go
 make: Leaving directory '/home/user/home-assignment'
  
