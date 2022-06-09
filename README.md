@@ -39,7 +39,7 @@ spec:
 
 ### Questions You Will Probably Will Be Asked
 
-- Can you create/update/delete labels?
+- Can you create/update/delete labels??
 - Can you deal with more than one NamespaceLabel object per Namespace?
 - Namespaces usually has labels for managment can you protect those labels?
 - Tenant is not able to consum CRDs by default, what did you do to let tenant use the NamespaceLabel CRD?

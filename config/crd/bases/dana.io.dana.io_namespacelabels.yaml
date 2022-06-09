@@ -39,10 +39,18 @@ spec:
               labels:
                 additionalProperties:
                   type: string
+                description: Map of string keys and values that are used to add labels
+                  to namespace
                 type: object
             type: object
           status:
             description: NamespaceLabelStatus defines the observed state of NamespaceLabel
+            properties:
+              activeLabels:
+                additionalProperties:
+                  type: string
+                description: Map of currently active user-added labels on namespace
+                type: object
             type: object
         type: object
     served: true

@@ -31,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	danaiov1alpha1 "home-assignment/api/v1alpha1"
+	danaiov1alpha1 "home-assignment/apis/namespacelabel/v1alpha1"
 	"home-assignment/controllers"
 	//+kubebuilder:scaffold:imports
 )
@@ -43,7 +43,6 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-
 	utilruntime.Must(danaiov1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
@@ -85,7 +84,11 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "NamespaceLabel")
 		os.Exit(1)
 	}
-	//+kubebuilder:scaffold:builder
+	if err = (&danaiov1alpha1.NamespaceLabel{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "NamespaceLabel")
+		os.Exit(1)
+	}
+	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
