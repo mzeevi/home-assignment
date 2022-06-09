@@ -19,8 +19,10 @@ jobs:
         go-version: ${{ matrix.go-version }}
     - uses: actions/checkout@v3
     
-    - name: run make (fmt, vet, build)
-      run: make
+    - name: run tidy and make (fmt, vet, build)
+      run: |
+        go mod tidy
+        make
     
     - name: test controller
       run: make test
