@@ -13,9 +13,15 @@ jobs:
       with:
         go-version: ${{ matrix.go-version }}
     - uses: actions/checkout@v3 
-    - name: run build
-      run: make build
+    
+    - name: download dependencies
+      run: go mod tidy
+    
     - name: run fmt
       run: make fmt
+    
+    - name: run build
+      run: make build
+    
     - name: test controller
       run: make test
