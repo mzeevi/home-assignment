@@ -6,4 +6,4 @@ metadata:
 spec:
   labels:
     sdsd: wd
-    label_dfd_kubernetes.io: a
+    label_dfd_openshift.io/sdsdsd: a
