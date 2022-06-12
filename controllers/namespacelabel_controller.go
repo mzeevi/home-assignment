@@ -60,11 +60,13 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, nil
 		}
 		// error reading the object - requeue the request.
+
 		log.Error(err, "unable to fetch namespaceLabel")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	// fetch the current namespace using our client
+
 	namespace := v1.Namespace{}
 	nsNamespacedName := types.NamespacedName{
 		Namespace: req.NamespacedName.Namespace,
@@ -108,6 +110,7 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// update status of namespaceLabel to match request
 	namespaceLabel.Status.ActiveLabels = namespaceLabel.Spec.Labels
+
 	if err := r.Status().Update(ctx, &namespaceLabel); err != nil {
 		log.Error(err, "unable to update namespaceLabel status")
 		return ctrl.Result{}, err

@@ -1,0 +1,26 @@
+name: controller workflow
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  test_controller:
+    strategy:
+      matrix:
+        go-version: [1.17.x]
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/setup-go@v3
+      with:
+        go-version: ${{ matrix.go-version }}
+    - uses: actions/checkout@v3
+    
+    - name: run tidy and make (fmt, vet, build)
+      run: |
+        go mod tidy
+        make
+    
+    - name: test controller
+      run: make test
