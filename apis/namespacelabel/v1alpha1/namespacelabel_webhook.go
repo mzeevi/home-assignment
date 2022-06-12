@@ -19,11 +19,10 @@ package v1alpha1
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -36,9 +35,6 @@ import (
 // log is for logging in this package.
 var namespacelabellog = logf.Log.WithName("namespacelabel-resource")
 
-const ControllerConfigMapName = "namespacelabel-controller-config"
-const CntrollerNamespace = "namespacelabel-system"
-const ControllerConfigMapKey = "MANAGEMENT_LABELS_DOMAINS"
 
 func (r *NamespaceLabel) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).
@@ -75,7 +71,7 @@ func (r *NamespaceLabel) ValidateCreate() error {
 		return errorMsg
 	}
 
-	if err := r.CheckLabelNS(cl); err != nil {
+	if err := r.CheckLabelNS(); err != nil {
 		return err
 	}
 
@@ -85,15 +81,8 @@ func (r *NamespaceLabel) ValidateCreate() error {
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *NamespaceLabel) ValidateUpdate(old runtime.Object) error {
 	namespacelabellog.Info("validate update", "name", r.Name)
-	utilruntime.Must(AddToScheme(scheme.Scheme))
-
-	cl, err := client.New(config.GetConfigOrDie(), client.Options{Scheme: scheme.Scheme})
-	if err != nil {
-		namespacelabellog.Error(err, "failed to create client")
-		return err
-	}
-
-	return r.CheckLabelNS(cl)
+  
+	return r.CheckLabelNS()
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
@@ -103,19 +92,12 @@ func (r *NamespaceLabel) ValidateDelete() error {
 	return nil
 }
 
-func (r *NamespaceLabel) CheckLabelNS(cl client.Client) error {
-	// get controller config map
-	confMap := v1.ConfigMap{}
-	cmNamespacedName := types.NamespacedName{
-		Namespace: CntrollerNamespace,
-		Name:      ControllerConfigMapName,
-	}
-	if err := cl.Get(context.Background(), cmNamespacedName, &confMap); err != nil {
-		namespacelabellog.Error(err, "unable to fetch configmap")
-		return err
-	}
+func (r *NamespaceLabel) CheckLabelNS() error {
+	// get controller config map values from environment variable
+	controllerConfigMapKey := os.Getenv("PROTECTED_MANAGEMENT_LABELS_DOMAINS")
 
-	protectedDomains := strings.Split(confMap.Data[ControllerConfigMapKey], ",")
+	protectedDomains := strings.Split(controllerConfigMapKey, ",")
+
 	for key := range r.Spec.Labels {
 		reqlabelDomain := strings.Split(key, "/")[0]
 		for _, dom := range protectedDomains {

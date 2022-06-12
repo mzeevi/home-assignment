@@ -31,6 +31,9 @@ spec:
         - --leader-elect
         image: controller:latest
         name: manager
+        env:
+        - name: PROTECTED_MANAGEMENT_LABELS_DOMAINS
+          value: $(PROTECTED_MANAGEMENT_LABELS_DOMAINS)
         securityContext:
           allowPrivilegeEscalation: false
         livenessProbe:

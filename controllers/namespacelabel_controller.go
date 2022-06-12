@@ -46,18 +46,11 @@ type NamespaceLabelReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the NamespaceLabel object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
 func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 	log.Info("Processing NamespaceLabelReconciler")
 
-	// we'll fetch the NamespaceLabel using our client
+	// fetch the NamespaceLabel using our client
 	var namespaceLabel danaiov1alpha1.NamespaceLabel
 	if err := r.Get(ctx, req.NamespacedName, &namespaceLabel); err != nil {
 		if errors.IsNotFound(err) {
@@ -66,15 +59,14 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			log.Info("NamespaceLabel resource not found. Ignoring since object must be deleted")
 			return ctrl.Result{}, nil
 		}
-		// Error reading the object - requeue the request.
+		// error reading the object - requeue the request.
+
 		log.Error(err, "unable to fetch namespaceLabel")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// get list of labels from request
-	reqLabels := namespaceLabel.Spec.Labels
+	// fetch the current namespace using our client
 
-	// we'll fetch the current namespace using our client
 	namespace := v1.Namespace{}
 	nsNamespacedName := types.NamespacedName{
 		Namespace: req.NamespacedName.Namespace,
@@ -86,58 +78,39 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	finalizerName := NamespaceLabelFinalizer
 	// examine DeletionTimestamp to determine if object is under deletion
-	if namespaceLabel.ObjectMeta.DeletionTimestamp.IsZero() {
-		// The object is not being deleted, so if it does not have our finalizer,
-		// then lets add the finalizer and update the object. This is equivalent
-		// registering our finalizer
-		if !controllerutil.ContainsFinalizer(&namespaceLabel, finalizerName) {
-			controllerutil.AddFinalizer(&namespaceLabel, finalizerName)
-			if err := r.Update(ctx, &namespaceLabel); err != nil {
-				log.Error(err, "failed to update namespaceLabel")
-				return ctrl.Result{}, err
-			}
+	if !namespaceLabel.ObjectMeta.DeletionTimestamp.IsZero() {
+		// handle finalizer deletion on object
+		if err := r.deleteFinalizer(ctx, &namespaceLabel, &namespace); err != nil {
+			return ctrl.Result{}, err
 		}
-	} else {
-		// the object is being deleted
-		if controllerutil.ContainsFinalizer(&namespaceLabel, finalizerName) {
-			// our finalizer is present, so lets handle any external dependency
-			r.deleteLabels(&namespaceLabel, &namespace)
-
-			// remove our finalizer from the list and update it
-			controllerutil.RemoveFinalizer(&namespaceLabel, finalizerName)
-			if err := r.Update(ctx, &namespaceLabel); err != nil {
-				log.Error(err, "failed to update namespaceLabel")
-				return ctrl.Result{}, err
-			}
-
-			if err := r.Update(ctx, &namespace); err != nil {
-				log.Error(err, "failed to update namespace")
-				return ctrl.Result{}, err
-			}
-		}
-		// stop reconciliation as the item is being deleted
 		return ctrl.Result{}, nil
 	}
 
-	// add the namespace labels to match the request
-	if namespace.ObjectMeta.Labels == nil {
-		namespace.ObjectMeta.Labels = make(map[string]string)
+	// The object is not being deleted, so if it does not have our finalizer,
+	// then lets add the finalizer and update the object. This is equivalent
+	// registering our finalizer
+	if err := r.addFinalizer(ctx, &namespaceLabel, &namespace); err != nil {
+		return ctrl.Result{}, nil
 	}
 
-	for key, val := range reqLabels {
-		namespace.ObjectMeta.Labels[key] = val
+	finalizerName := NamespaceLabelFinalizer
+	if !controllerutil.ContainsFinalizer(&namespaceLabel, finalizerName) {
+		controllerutil.AddFinalizer(&namespaceLabel, finalizerName)
+		if err := r.Update(ctx, &namespaceLabel); err != nil {
+			log.Error(err, "failed to update namespaceLabel")
+			return ctrl.Result{}, err
+		}
 	}
 
-	// update the namespace with the new labels
-	if err := r.Update(ctx, &namespace); err != nil {
-		log.Error(err, "failed to update namespace")
+	addLabels, delLabels := r.getNamespaceLabelsDiffs(&namespaceLabel)
+	if err := r.updateNSLabels(ctx, &namespace, addLabels, delLabels); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	// update status of namespaceLabel
-	namespaceLabel.Status.ActiveLabels = reqLabels
+	// update status of namespaceLabel to match request
+	namespaceLabel.Status.ActiveLabels = namespaceLabel.Spec.Labels
+
 	if err := r.Status().Update(ctx, &namespaceLabel); err != nil {
 		log.Error(err, "unable to update namespaceLabel status")
 		return ctrl.Result{}, err
@@ -148,10 +121,111 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 func (r *NamespaceLabelReconciler) deleteLabels(namespaceLabel *danaiov1alpha1.NamespaceLabel, namespace *v1.Namespace) {
 	// delete the labels from the namespace
-	reqLabels := namespaceLabel.Spec.Labels
-	for key := range reqLabels {
+	actLabels := namespaceLabel.Status.ActiveLabels
+	for key := range actLabels {
 		delete(namespace.ObjectMeta.Labels, key)
 	}
+}
+
+func (r *NamespaceLabelReconciler) deleteFinalizer(ctx context.Context, namespaceLabel *danaiov1alpha1.NamespaceLabel, namespace *v1.Namespace) error {
+	log := log.FromContext(ctx)
+	log.Info("Handling finalizer deletion")
+
+	finalizerName := NamespaceLabelFinalizer
+	if controllerutil.ContainsFinalizer(namespaceLabel, finalizerName) {
+		// our finalizer is present, so lets handle any external dependency
+		r.deleteLabels(namespaceLabel, namespace)
+
+		// remove our finalizer from the list and update it
+		controllerutil.RemoveFinalizer(namespaceLabel, finalizerName)
+		if err := r.Update(ctx, namespaceLabel); err != nil {
+			log.Error(err, "failed to update namespaceLabel")
+			return err
+		}
+
+		if err := r.Update(ctx, namespace); err != nil {
+			log.Error(err, "failed to update namespace")
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *NamespaceLabelReconciler) addFinalizer(ctx context.Context, namespaceLabel *danaiov1alpha1.NamespaceLabel, namespace *v1.Namespace) error {
+	// The object is not being deleted, so if it does not have our finalizer,
+	// then lets add the finalizer and update the object. This is equivalent
+	// registering our finalizer
+	log := log.FromContext(ctx)
+	log.Info("Handling finalizer addition")
+	finalizerName := NamespaceLabelFinalizer
+	if !controllerutil.ContainsFinalizer(namespaceLabel, finalizerName) {
+		controllerutil.AddFinalizer(namespaceLabel, finalizerName)
+		if err := r.Update(ctx, namespaceLabel); err != nil {
+			log.Error(err, "failed to update namespaceLabel")
+			return err
+		}
+	}
+	return nil
+}
+
+// this function compares the status and the spec of a NamespaceLabel object
+// and returns two maps: one map indicates which labels to add/amend
+// the second map indicates which labels to delete from the namespace
+func (r *NamespaceLabelReconciler) getNamespaceLabelsDiffs(namespaceLabel *danaiov1alpha1.NamespaceLabel) (map[string]string, map[string]string) {
+	addLabels := make(map[string]string)
+	delLabels := make(map[string]string)
+
+	reqLabels := namespaceLabel.Spec.Labels
+	actLabels := namespaceLabel.Status.ActiveLabels
+
+	if actLabels == nil {
+		addLabels = reqLabels
+		return addLabels, delLabels
+	}
+
+	// loop over requested labels and check if they don't exist in the active labels
+	// if so, add to addLabels map
+	for reqKey, reqVal := range reqLabels {
+		if actVal, ok := actLabels[reqKey]; !ok || actVal != reqVal {
+			addLabels[reqKey] = reqVal
+		}
+	}
+
+	// loop over active labels and check if they don't exist in the requested labels
+	// if so, add to delLabels map
+	for actKey, actVal := range actLabels {
+		if _, ok := reqLabels[actKey]; !ok {
+			delLabels[actKey] = actVal
+		}
+	}
+
+	return addLabels, delLabels
+}
+
+func (r *NamespaceLabelReconciler) updateNSLabels(ctx context.Context, namespace *v1.Namespace, addLabels map[string]string, delLabels map[string]string) error {
+	log := log.FromContext(ctx)
+	log.Info("Updating namespace labels")
+
+	// add the namespace labels to match the request
+	if namespace.ObjectMeta.Labels == nil {
+		namespace.ObjectMeta.Labels = make(map[string]string)
+	}
+
+	for key, val := range addLabels {
+		namespace.ObjectMeta.Labels[key] = val
+	}
+
+	for key := range delLabels {
+		delete(namespace.ObjectMeta.Labels, key)
+	}
+
+	// update the namespace with the new labels
+	if err := r.Update(ctx, namespace); err != nil {
+		log.Error(err, "failed to update namespace")
+		return err
+	}
+
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
