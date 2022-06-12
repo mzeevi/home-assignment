@@ -35,8 +35,6 @@ import (
 // log is for logging in this package.
 var namespacelabellog = logf.Log.WithName("namespacelabel-resource")
 
-const ControllerConfigMapKey = "MANGEAMENT_LABELS_DOMAINS"
-
 func (r *NamespaceLabel) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(r).
