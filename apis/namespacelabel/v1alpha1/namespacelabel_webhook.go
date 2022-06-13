@@ -35,7 +35,6 @@ import (
 // log is for logging in this package.
 var namespacelabellog = logf.Log.WithName("namespacelabel-resource")
 
-
 func (r *NamespaceLabel) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(r).
@@ -81,7 +80,7 @@ func (r *NamespaceLabel) ValidateCreate() error {
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *NamespaceLabel) ValidateUpdate(old runtime.Object) error {
 	namespacelabellog.Info("validate update", "name", r.Name)
-  
+
 	return r.CheckLabelNS()
 }
 

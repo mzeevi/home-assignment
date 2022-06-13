@@ -94,21 +94,13 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
-	finalizerName := NamespaceLabelFinalizer
-	if !controllerutil.ContainsFinalizer(&namespaceLabel, finalizerName) {
-		controllerutil.AddFinalizer(&namespaceLabel, finalizerName)
-		if err := r.Update(ctx, &namespaceLabel); err != nil {
-			log.Error(err, "failed to update namespaceLabel")
-			return ctrl.Result{}, err
-		}
-	}
-
+	// get labels to add and delete and update the namespace
 	addLabels, delLabels := r.getNamespaceLabelsDiffs(&namespaceLabel)
 	if err := r.updateNSLabels(ctx, &namespace, addLabels, delLabels); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	// update status of namespaceLabel to match request
+	// update status of namespaceLabel to match current state
 	namespaceLabel.Status.ActiveLabels = namespaceLabel.Spec.Labels
 
 	if err := r.Status().Update(ctx, &namespaceLabel); err != nil {
