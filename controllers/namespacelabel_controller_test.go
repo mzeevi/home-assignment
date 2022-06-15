@@ -256,6 +256,6 @@ func TestUpdateNSLabels(t *testing.T) {
 			"labelC":             "testlabelC2",
 		}
 
-		return !reflect.DeepEqual(namespace.ObjectMeta.Labels, expectedLabels)
+		return reflect.DeepEqual(namespace.ObjectMeta.Labels, expectedLabels)
 	}()).To(BeTrue())
 }
