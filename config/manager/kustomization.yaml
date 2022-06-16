@@ -13,7 +13,7 @@ kind: Kustomization
 images:
 - name: controller
   newName: localhost/meytarzeevi/namespacelabel
-  newTag: v0.2
+  newTag: v0.4
 
 configMapGenerator:
 - literals:
