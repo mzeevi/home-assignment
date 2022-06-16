@@ -159,6 +159,7 @@ var _ = Describe("Namespacelabel Controller", func() {
 			Expect(createdNamespaceLabel.Spec.Labels).Should(Equal(expectedLabels))
 
 			By("By checking that the namespace has the new labels")
+
 			Eventually(func() (map[string]string, error) {
 				err := k8sClient.Get(ctx, namespaceLabelLookupKey, &createdNamespaceLabel)
 				if err != nil {

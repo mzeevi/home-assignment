@@ -66,7 +66,6 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// fetch the current namespace using our client
-
 	namespace := v1.Namespace{}
 	nsNamespacedName := types.NamespacedName{
 		Namespace: req.NamespacedName.Namespace,

@@ -26,10 +26,12 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	danaiov1alpha1 "home-assignment/apis/namespacelabel/v1alpha1"
 )
@@ -257,5 +259,58 @@ func TestUpdateNSLabels(t *testing.T) {
 		}
 
 		return reflect.DeepEqual(namespace.ObjectMeta.Labels, expectedLabels)
+	}()).To(BeTrue())
+}
+
+func TestReconciler(t *testing.T) {
+	g := NewGomegaWithT(t)
+	RegisterFailHandler(ginkgo.Fail)
+
+	namespaceLabel := generateNamespacelabelObject()
+	namespace := generateNamespaceObject()
+
+	obj := []client.Object{namespaceLabel, namespace}
+
+	newStatusLabels := map[string]string{}
+	namespaceLabel.Status.ActiveLabels = newStatusLabels
+
+	cl, s, err := setupClient(obj)
+	if err != nil {
+		t.Fatalf("Unable to add to scheme: %v", err)
+	}
+
+	// create a NamespaceLabelReconciler object with the scheme and fake client
+	r := &NamespaceLabelReconciler{cl, s}
+
+	// mock request to simulate Reconcile() being called on an event for a watched resource
+	req := reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      namespaceLabel.ObjectMeta.Name,
+			Namespace: namespaceLabel.ObjectMeta.Namespace,
+		},
+	}
+
+	res, err := r.Reconcile(context.TODO(), req)
+	if err != nil {
+		t.Fatalf("Unable to reconcile: %v", err)
+	}
+
+	// check the result of reconciliation to make sure it has the desired state
+	if res.Requeue {
+		t.Error("reconcile did not requeue request as expected")
+	}
+
+	err = r.Get(context.TODO(), req.NamespacedName, namespaceLabel)
+	if err != nil {
+		t.Fatalf("get: (%v)", err)
+	}
+
+	// check if the status matches the expected status
+	g.Expect(func() bool {
+		expectedStatus := map[string]string{
+			LabelKey: LabelVal,
+		}
+
+		return reflect.DeepEqual(namespaceLabel.Status.ActiveLabels, expectedStatus)
 	}()).To(BeTrue())
 }

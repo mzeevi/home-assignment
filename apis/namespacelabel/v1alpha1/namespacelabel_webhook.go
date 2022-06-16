@@ -17,17 +17,12 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
@@ -49,25 +44,12 @@ var _ webhook.Validator = &NamespaceLabel{}
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *NamespaceLabel) ValidateCreate() error {
 	namespacelabellog.Info("validate create", "name", r.Name)
-	utilruntime.Must(AddToScheme(scheme.Scheme))
 
-	cl, err := client.New(config.GetConfigOrDie(), client.Options{Scheme: scheme.Scheme})
-	if err != nil {
-		namespacelabellog.Error(err, "failed to create client")
+	if res := r.CheckNamespaceLabelName(); !res {
+		err := fmt.Errorf("NamespaceLabel name must be equal to the name of its namespace")
+		namespacelabellog.Error(err, "unable to crate namespacelabel")
+
 		return err
-	}
-
-	namespacelabelList := NamespaceLabelList{}
-
-	if err := cl.List(context.Background(), &namespacelabelList, client.InNamespace(r.ObjectMeta.Namespace)); err != nil {
-		namespacelabellog.Error(err, "unable to list namespaceLabelsList")
-		return err
-	}
-	namespacelabellog.Info("Successfully listed")
-
-	if len(namespacelabelList.Items) > 0 {
-		errorMsg := fmt.Errorf("only one namespaceLabel object can be set on namespace %v", r.ObjectMeta.Namespace)
-		return errorMsg
 	}
 
 	if err := r.CheckLabelNS(); err != nil {
@@ -91,18 +73,28 @@ func (r *NamespaceLabel) ValidateDelete() error {
 	return nil
 }
 
+func (r *NamespaceLabel) CheckNamespaceLabelName() bool {
+	nsLabelName := r.Name
+	nsLabelNamespace := r.Namespace
+
+	return nsLabelName == nsLabelNamespace
+}
+
 func (r *NamespaceLabel) CheckLabelNS() error {
 	// get controller config map values from environment variable
 	controllerConfigMapKey := os.Getenv("PROTECTED_MANAGEMENT_LABELS_DOMAINS")
 
-	protectedDomains := strings.Split(controllerConfigMapKey, ",")
+	if controllerConfigMapKey != "" {
 
-	for key := range r.Spec.Labels {
-		reqlabelDomain := strings.Split(key, "/")[0]
-		for _, dom := range protectedDomains {
-			if strings.HasSuffix(reqlabelDomain, dom) {
-				errorMsg := fmt.Errorf("setting labels of the %s domain is not allowed", dom)
-				return errorMsg
+		protectedDomains := strings.Split(controllerConfigMapKey, ",")
+
+		for key := range r.Spec.Labels {
+			reqlabelDomain := strings.Split(key, "/")[0]
+			for _, dom := range protectedDomains {
+				if strings.HasSuffix(reqlabelDomain, dom) {
+					errorMsg := fmt.Errorf("setting labels of the %s domain is not allowed", dom)
+					return errorMsg
+				}
 			}
 		}
 	}

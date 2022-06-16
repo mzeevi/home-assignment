@@ -21,6 +21,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -30,6 +31,8 @@ import (
 
 	admissionv1beta1 "k8s.io/api/admission/v1beta1"
 	//+kubebuilder:scaffold:imports
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -132,4 +135,91 @@ var _ = AfterSuite(func() {
 	By("tearing down the test environment")
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
+})
+
+var _ = Describe("Namespacelabel Controller Webhooks", func() {
+
+	ctx, cancel = context.WithCancel(context.TODO())
+	// set environment variable
+	protectedLabels := "kubernetes.io,openshift.io"
+	os.Setenv("PROTECTED_MANAGEMENT_LABELS_DOMAINS", protectedLabels)
+
+	Context("When updating NamespaceLabel Status", func() {
+		It("Should allow creation,  updating and deletion of NamespaceLabel objects", func() {
+			By("Checking the name of the NamespaceLabel and its labels")
+
+			// create a NamespaceLabel object
+			namespaceLabel := NamespaceLabel{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "dana.io.dana.io/v1alpha1",
+					Kind:       "NamespaceLabel",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "default",
+					Namespace: "default",
+				},
+				Spec: NamespaceLabelSpec{
+					Labels: map[string]string{
+						"labelA": "testlabelA",
+						"labelB": "testlabelB",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, &namespaceLabel)).Should(Succeed())
+
+			By("Allowing update of labels")
+			newLabels := map[string]string{
+				"labelA": "testlabelA",
+			}
+			namespaceLabel.Spec.Labels = newLabels
+			Expect(k8sClient.Update(ctx, &namespaceLabel)).Should(Succeed())
+
+			By("Deletion of object")
+			Expect(k8sClient.Delete(ctx, &namespaceLabel)).Should(Succeed())
+
+		})
+
+		It("Should deny creation of NamespaceLabel objects", func() {
+			By("Checking if a NamespaceLabel name is different from the namespace")
+
+			// create a NamespaceLabel object
+			namespaceLabel := NamespaceLabel{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "dana.io.dana.io/v1alpha1",
+					Kind:       "NamespaceLabel",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "default",
+				},
+				Spec: NamespaceLabelSpec{
+					Labels: map[string]string{
+						"labelA": "testlabel",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, &namespaceLabel)).ShouldNot(Succeed())
+		})
+
+		It("Should not allow certain labels to be set", func() {
+			By("Checking if protected management labels are specified")
+			// try to create another NamespaceLabel object
+			namespaceLabelThree := NamespaceLabel{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "dana.io.dana.io/v1alpha1",
+					Kind:       "NamespaceLabel",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "default",
+					Namespace: "default",
+				},
+				Spec: NamespaceLabelSpec{
+					Labels: map[string]string{
+						"kubernetes.io/metadata.name": "testName",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, &namespaceLabelThree)).ShouldNot(Succeed())
+		})
+	})
 })
