@@ -33,6 +33,9 @@ type NamespaceLabelSpec struct {
 type NamespaceLabelStatus struct {
 	// Map of currently active user-added labels on namespace
 	ActiveLabels map[string]string `json:"activeLabels,omitempty"`
+
+	// Conditions represent the latest available observed state
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 //+kubebuilder:object:root=true

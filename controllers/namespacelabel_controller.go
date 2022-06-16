@@ -21,6 +21,8 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -31,7 +33,12 @@ import (
 	danaiov1alpha1 "home-assignment/apis/namespacelabel/v1alpha1"
 )
 
-const NamespaceLabelFinalizer = "dana.io/namespacelabel-finalizer"
+const (
+	NamespaceLabelFinalizer       string = "dana.io/namespacelabel-finalizer"
+	ConditionTypeReady            string = "Ready"
+	ReconciliationSucceededReason string = "ReconciliationSucceeded"
+	ReconciliationFailedReason    string = "ReconciliationFailed"
+)
 
 // NamespaceLabelReconciler reconciles a NamespaceLabel object
 type NamespaceLabelReconciler struct {
@@ -77,10 +84,20 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	defer func() (ctrl.Result, error) {
+		if err := r.Status().Update(ctx, &namespaceLabel); err != nil {
+			log.Error(err, "unable to update namespaceLabel status")
+			return ctrl.Result{}, err
+		}
+		log.Info("Updating namespacelabel status")
+		return ctrl.Result{}, nil
+	}()
+
 	// examine DeletionTimestamp to determine if object is under deletion
 	if !namespaceLabel.ObjectMeta.DeletionTimestamp.IsZero() {
 		// handle finalizer deletion on object
 		if err := r.deleteFinalizer(ctx, &namespaceLabel, &namespace); err != nil {
+			r.setFailedStatus(ctx, &namespaceLabel, err)
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, nil
@@ -90,22 +107,20 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// then lets add the finalizer and update the object. This is equivalent
 	// registering our finalizer
 	if err := r.addFinalizer(ctx, &namespaceLabel); err != nil {
+		r.setFailedStatus(ctx, &namespaceLabel, err)
 		return ctrl.Result{}, nil
 	}
 
 	// get labels to add and delete and update the namespace
 	addLabels, delLabels := r.getNamespaceLabelsDiffs(&namespaceLabel)
 	if err := r.updateNSLabels(ctx, &namespace, addLabels, delLabels); err != nil {
+		r.setFailedStatus(ctx, &namespaceLabel, err)
 		return ctrl.Result{}, err
 	}
 
 	// update status of namespaceLabel to match current state
 	namespaceLabel.Status.ActiveLabels = namespaceLabel.Spec.Labels
-
-	if err := r.Status().Update(ctx, &namespaceLabel); err != nil {
-		log.Error(err, "unable to update namespaceLabel status")
-		return ctrl.Result{}, err
-	}
+	r.setReadyStatus(ctx, &namespaceLabel)
 
 	return ctrl.Result{}, nil
 }
@@ -217,6 +232,32 @@ func (r *NamespaceLabelReconciler) updateNSLabels(ctx context.Context, namespace
 	}
 
 	return nil
+}
+
+func (r *NamespaceLabelReconciler) setFailedStatus(ctx context.Context, namespaceLabel *danaiov1alpha1.NamespaceLabel, err error) {
+	log := log.FromContext(ctx)
+	log.Info("Setting ready status on object")
+	readyCondition := metav1.Condition{
+		Status:  metav1.ConditionFalse,
+		Reason:  ReconciliationFailedReason,
+		Message: err.Error(),
+		Type:    ConditionTypeReady,
+	}
+
+	apimeta.SetStatusCondition(&namespaceLabel.Status.Conditions, readyCondition)
+}
+
+func (r *NamespaceLabelReconciler) setReadyStatus(ctx context.Context, namespaceLabel *danaiov1alpha1.NamespaceLabel) {
+	log := log.FromContext(ctx)
+	log.Info("Setting ready status on object")
+	readyCondition := metav1.Condition{
+		Status:  metav1.ConditionTrue,
+		Reason:  ReconciliationSucceededReason,
+		Message: "All labels are ready and set on namespace",
+		Type:    ConditionTypeReady,
+	}
+
+	apimeta.SetStatusCondition(&namespaceLabel.Status.Conditions, readyCondition)
 }
 
 // SetupWithManager sets up the controller with the Manager.
