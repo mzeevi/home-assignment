@@ -1,9 +1,9 @@
 apiVersion: dana.io.dana.io/v1alpha1
 kind: NamespaceLabel
 metadata:
-  name: namespacelabel-sample-2
+  name: default
   namespace: default
 spec:
   labels:
     sdsd: wd
-    label_dfd_openshift.io/sdsdsd: a
+    label_dfd/sdsdsd: a

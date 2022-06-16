@@ -18,80 +18,299 @@ package controllers
 
 import (
 	"context"
-	"time"
+	"reflect"
+	"testing"
 
-	. "github.com/onsi/ginkgo"
+	"github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	danaiov1alpha1 "home-assignment/apis/namespacelabel/v1alpha1"
 )
 
-var _ = Describe("Namespacelabel Controller", func() {
+const (
+	LabelKey = "label-key"
+	LabelVal = "label-value"
+)
 
-	// define utility constants for object names and testing timeouts/durations and intervals
-	const (
-		NamespaceLabelName      = "test-namespacelabel"
-		NamespaceLabelNamespace = "default"
+func setupClient(obj []client.Object) (client.Client, *runtime.Scheme, error) {
 
-		timeout  = time.Second * 10
-		duration = time.Second * 10
-		interval = time.Millisecond * 250
-	)
+	s := scheme.Scheme
+	if err := danaiov1alpha1.AddToScheme(s); err != nil {
+		return nil, s, err
+	}
 
-	Context("When updating NamespaceLabel Status", func() {
-		It("Should change NamespaceLabel Status.ActiveLabels to match new namespace labels", func() {
-			By("By creating a new NamespaceLabel")
-			ctx := context.Background()
-			namespaceLabel := danaiov1alpha1.NamespaceLabel{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "dana.io.dana.io/v1alpha1",
-					Kind:       "NamespaceLabel",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      NamespaceLabelName,
-					Namespace: NamespaceLabelNamespace,
-				},
-				Spec: danaiov1alpha1.NamespaceLabelSpec{
-					Labels: map[string]string{
-						"labelA": "testlabel",
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, &namespaceLabel)).Should(Succeed())
+	// create fake client
+	cl := fake.NewClientBuilder().WithObjects(obj...).Build()
 
-			namespaceLabelLookupKey := types.NamespacedName{
-				Name:      NamespaceLabelName,
-				Namespace: NamespaceLabelNamespace,
-			}
-			createdNamespaceLabel := danaiov1alpha1.NamespaceLabel{}
+	return cl, s, nil
 
-			// we'll need to retry getting this newly created namespaceLabel, given that creation may not immediately happen
-			Eventually(func() bool {
-				err := k8sClient.Get(ctx, namespaceLabelLookupKey, &createdNamespaceLabel)
-				return err == nil
-			}, timeout, interval).Should(BeTrue())
+}
 
-			// let's make sure our labels map value was properly converted/handled.
-			expectedLabels := map[string]string{
-				"labelA": "testlabel",
-			}
-			Expect(createdNamespaceLabel.Spec.Labels).Should(Equal(expectedLabels))
+func generateNamespacelabelObject() *danaiov1alpha1.NamespaceLabel {
+	namespaceLabel := &danaiov1alpha1.NamespaceLabel{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "namespacelabel-test",
+			Namespace: "default",
+		},
+		Spec: danaiov1alpha1.NamespaceLabelSpec{
+			Labels: map[string]string{
+				LabelKey: LabelVal,
+			},
+		},
+		Status: danaiov1alpha1.NamespaceLabelStatus{
+			ActiveLabels: map[string]string{
+				LabelKey: LabelVal,
+			},
+		},
+	}
 
-			By("By checking that the namespace has the new labels")
-			Eventually(func() (map[string]string, error) {
-				err := k8sClient.Get(ctx, namespaceLabelLookupKey, &createdNamespaceLabel)
-				if err != nil {
-					return nil, err
-				}
+	return namespaceLabel
+}
 
-				labels := map[string]string{}
-				for key, val := range createdNamespaceLabel.Status.ActiveLabels {
-					labels[key] = val
-				}
-				return labels, nil
-			}, timeout, interval).Should(ContainElements("testlabel"))
-		})
-	})
-})
+func generateNamespaceObject() *v1.Namespace {
+	namespace := &v1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "default",
+			Namespace: "default",
+			Labels: map[string]string{
+				"kubernetes.io/name": "default",
+				LabelKey:             LabelVal,
+			},
+		},
+	}
+
+	return namespace
+}
+
+func TestDeleteLabels(t *testing.T) {
+	g := NewGomegaWithT(t)
+	RegisterFailHandler(ginkgo.Fail)
+
+	namespaceLabel := generateNamespacelabelObject()
+	namespace := generateNamespaceObject()
+
+	// objects to track in the fake client
+	obj := []client.Object{namespaceLabel, namespace}
+
+	cl, s, err := setupClient(obj)
+	if err != nil {
+		t.Fatalf("Unable to add to scheme: %v", err)
+	}
+
+	// create a NamespaceLabelReconciler object with the scheme and fake client
+	r := &NamespaceLabelReconciler{cl, s}
+
+	// run function to test
+	r.deleteLabels(namespaceLabel, namespace)
+
+	// set expected result and check result matches expected
+	g.Expect(func() bool {
+		expectedLabels := map[string]string{
+			"kubernetes.io/name": "default",
+		}
+		actualLabels := namespace.ObjectMeta.Labels
+		return reflect.DeepEqual(expectedLabels, actualLabels)
+	}()).To(BeTrue())
+}
+
+func TestDeleteFinalizer(t *testing.T) {
+	g := NewGomegaWithT(t)
+	RegisterFailHandler(ginkgo.Fail)
+
+	namespaceLabel := generateNamespacelabelObject()
+	namespace := generateNamespaceObject()
+
+	obj := []client.Object{namespaceLabel, namespace}
+	cl, s, err := setupClient(obj)
+	if err != nil {
+		t.Fatalf("Unable to add to scheme: %v", err)
+	}
+
+	// create a NamespaceLabelReconciler object with the scheme and fake client
+	r := &NamespaceLabelReconciler{cl, s}
+
+	// add finalizer to namespacelabel object
+	controllerutil.AddFinalizer(namespaceLabel, NamespaceLabelFinalizer)
+
+	// run function to test
+	r.deleteFinalizer(context.TODO(), namespaceLabel, namespace)
+
+	// set expected result and check result matches expected
+	g.Expect(func() bool {
+		return !controllerutil.ContainsFinalizer(namespaceLabel, NamespaceLabelFinalizer)
+	}()).To(BeTrue())
+}
+
+func TestAddFinalizer(t *testing.T) {
+	g := NewGomegaWithT(t)
+	RegisterFailHandler(ginkgo.Fail)
+
+	namespaceLabel := generateNamespacelabelObject()
+
+	obj := []client.Object{namespaceLabel}
+	cl, s, err := setupClient(obj)
+	if err != nil {
+		t.Fatalf("Unable to add to scheme: %v", err)
+	}
+
+	// create a NamespaceLabelReconciler object with the scheme and fake client
+	r := &NamespaceLabelReconciler{cl, s}
+
+	// run function to test
+	r.addFinalizer(context.TODO(), namespaceLabel)
+
+	// set expected result and check result matches expected
+	g.Expect(func() bool {
+		return controllerutil.ContainsFinalizer(namespaceLabel, NamespaceLabelFinalizer)
+	}()).To(BeTrue())
+}
+
+func TestGetNamespaceLabelsDiffs(t *testing.T) {
+	g := NewGomegaWithT(t)
+	RegisterFailHandler(ginkgo.Fail)
+
+	namespaceLabel := generateNamespacelabelObject()
+
+	newSpecLabels := map[string]string{
+		"labelA": "testlabelA",
+		"labelB": "testlabelB",
+		"labelC": "testlabelC2",
+	}
+
+	newStatusLabels := map[string]string{
+		"labelA": "testlabelA",
+		"labelC": "testlabelC",
+		"labelD": "testlabelD",
+	}
+
+	namespaceLabel.Spec.Labels = newSpecLabels
+	namespaceLabel.Status.ActiveLabels = newStatusLabels
+
+	obj := []client.Object{namespaceLabel}
+	cl, s, err := setupClient(obj)
+	if err != nil {
+		t.Fatalf("Unable to add to scheme: %v", err)
+	}
+
+	// create a NamespaceLabelReconciler object with the scheme and fake client
+	r := &NamespaceLabelReconciler{cl, s}
+
+	// run function to test
+	addLabels, delLabels := r.getNamespaceLabelsDiffs(namespaceLabel)
+
+	// set expected result and check result matches expected
+	g.Expect(func() bool {
+		expectedAddLabels := map[string]string{
+			"labelB": "testlabelB",
+			"labelC": "testlabelC2",
+		}
+		expectedDelLabels := map[string]string{
+			"labelD": "testlabelD",
+		}
+
+		return reflect.DeepEqual(addLabels, expectedAddLabels) && reflect.DeepEqual(delLabels, expectedDelLabels)
+	}()).To(BeTrue())
+}
+
+func TestUpdateNSLabels(t *testing.T) {
+	g := NewGomegaWithT(t)
+	RegisterFailHandler(ginkgo.Fail)
+
+	namespace := generateNamespaceObject()
+
+	addLabels := map[string]string{
+		"labelB": "testlabelB",
+		"labelC": "testlabelC2",
+	}
+	delLabels := map[string]string{
+		"labelD": "testlabelD",
+	}
+
+	obj := []client.Object{namespace}
+	cl, s, err := setupClient(obj)
+	if err != nil {
+		t.Fatalf("Unable to add to scheme: %v", err)
+	}
+
+	// create a NamespaceLabelReconciler object with the scheme and fake client
+	r := &NamespaceLabelReconciler{cl, s}
+
+	// run function to test
+	if err := r.updateNSLabels(context.TODO(), namespace, addLabels, delLabels); err != nil {
+		t.Fatalf("Unable to add to update NS Labels: %v", err)
+	}
+
+	// set expected result and check result matches expected
+	g.Expect(func() bool {
+		expectedLabels := map[string]string{
+			"kubernetes.io/name": "default",
+			LabelKey:             LabelVal,
+			"labelB":             "testlabelB",
+			"labelC":             "testlabelC2",
+		}
+
+		return reflect.DeepEqual(namespace.ObjectMeta.Labels, expectedLabels)
+	}()).To(BeTrue())
+}
+
+func TestReconciler(t *testing.T) {
+	g := NewGomegaWithT(t)
+	RegisterFailHandler(ginkgo.Fail)
+
+	namespaceLabel := generateNamespacelabelObject()
+	namespace := generateNamespaceObject()
+
+	obj := []client.Object{namespaceLabel, namespace}
+
+	newStatusLabels := map[string]string{}
+	namespaceLabel.Status.ActiveLabels = newStatusLabels
+
+	cl, s, err := setupClient(obj)
+	if err != nil {
+		t.Fatalf("Unable to add to scheme: %v", err)
+	}
+
+	// create a NamespaceLabelReconciler object with the scheme and fake client
+	r := &NamespaceLabelReconciler{cl, s}
+
+	// mock request to simulate Reconcile() being called on an event for a watched resource
+	req := reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      namespaceLabel.ObjectMeta.Name,
+			Namespace: namespaceLabel.ObjectMeta.Namespace,
+		},
+	}
+
+	res, err := r.Reconcile(context.TODO(), req)
+	if err != nil {
+		t.Fatalf("Unable to reconcile: %v", err)
+	}
+
+	// check the result of reconciliation to make sure it has the desired state
+	if res.Requeue {
+		t.Error("reconcile did not requeue request as expected")
+	}
+
+	err = r.Get(context.TODO(), req.NamespacedName, namespaceLabel)
+	if err != nil {
+		t.Fatalf("get: (%v)", err)
+	}
+
+	// check if the status matches the expected status
+	g.Expect(func() bool {
+		expectedStatus := map[string]string{
+			LabelKey: LabelVal,
+		}
+
+		return reflect.DeepEqual(namespaceLabel.Status.ActiveLabels, expectedStatus)
+	}()).To(BeTrue())
+}

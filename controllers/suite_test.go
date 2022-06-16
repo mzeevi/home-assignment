@@ -20,9 +20,12 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -102,4 +105,73 @@ var _ = AfterSuite(func() {
 	By("tearing down the test environment")
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
+})
+
+var _ = Describe("Namespacelabel Controller", func() {
+
+	// define utility constants for object names and testing timeouts/durations and intervals
+	const (
+		NamespaceLabelName      = "test-namespacelabel"
+		NamespaceLabelNamespace = "default"
+
+		timeout  = time.Second * 10
+		duration = time.Second * 10
+		interval = time.Millisecond * 250
+	)
+
+	Context("When updating NamespaceLabel Status", func() {
+		It("Should change NamespaceLabel Status.ActiveLabels to match new namespace labels", func() {
+			By("By creating a new NamespaceLabel")
+			ctx := context.Background()
+			namespaceLabel := danaiov1alpha1.NamespaceLabel{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "dana.io.dana.io/v1alpha1",
+					Kind:       "NamespaceLabel",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      NamespaceLabelName,
+					Namespace: NamespaceLabelNamespace,
+				},
+				Spec: danaiov1alpha1.NamespaceLabelSpec{
+					Labels: map[string]string{
+						"labelA": "testlabel",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, &namespaceLabel)).Should(Succeed())
+
+			namespaceLabelLookupKey := types.NamespacedName{
+				Name:      NamespaceLabelName,
+				Namespace: NamespaceLabelNamespace,
+			}
+			createdNamespaceLabel := danaiov1alpha1.NamespaceLabel{}
+
+			// we'll need to retry getting this newly created namespaceLabel, given that creation may not immediately happen
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, namespaceLabelLookupKey, &createdNamespaceLabel)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+
+			// let's make sure our labels map value was properly converted/handled.
+			expectedLabels := map[string]string{
+				"labelA": "testlabel",
+			}
+			Expect(createdNamespaceLabel.Spec.Labels).Should(Equal(expectedLabels))
+
+			By("By checking that the namespace has the new labels")
+
+			Eventually(func() (map[string]string, error) {
+				err := k8sClient.Get(ctx, namespaceLabelLookupKey, &createdNamespaceLabel)
+				if err != nil {
+					return nil, err
+				}
+
+				labels := map[string]string{}
+				for key, val := range createdNamespaceLabel.Status.ActiveLabels {
+					labels[key] = val
+				}
+				return labels, nil
+			}, timeout, interval).Should(ContainElements("testlabel"))
+		})
+	})
 })

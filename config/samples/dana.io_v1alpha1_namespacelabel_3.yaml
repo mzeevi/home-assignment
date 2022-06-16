@@ -1,8 +1,8 @@
 apiVersion: dana.io.dana.io/v1alpha1
 kind: NamespaceLabel
 metadata:
-  name: namespacelabel-sample-3
-  namespace: namespacelabel-system
+  name: default
+  namespace: default
 spec:
   labels:
     label_1: a

@@ -62,11 +62,10 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// error reading the object - requeue the request.
 
 		log.Error(err, "unable to fetch namespaceLabel")
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		return ctrl.Result{}, err
 	}
 
 	// fetch the current namespace using our client
-
 	namespace := v1.Namespace{}
 	nsNamespacedName := types.NamespacedName{
 		Namespace: req.NamespacedName.Namespace,
@@ -90,7 +89,7 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// The object is not being deleted, so if it does not have our finalizer,
 	// then lets add the finalizer and update the object. This is equivalent
 	// registering our finalizer
-	if err := r.addFinalizer(ctx, &namespaceLabel, &namespace); err != nil {
+	if err := r.addFinalizer(ctx, &namespaceLabel); err != nil {
 		return ctrl.Result{}, nil
 	}
 
@@ -123,13 +122,12 @@ func (r *NamespaceLabelReconciler) deleteFinalizer(ctx context.Context, namespac
 	log := log.FromContext(ctx)
 	log.Info("Handling finalizer deletion")
 
-	finalizerName := NamespaceLabelFinalizer
-	if controllerutil.ContainsFinalizer(namespaceLabel, finalizerName) {
+	if controllerutil.ContainsFinalizer(namespaceLabel, NamespaceLabelFinalizer) {
 		// our finalizer is present, so lets handle any external dependency
 		r.deleteLabels(namespaceLabel, namespace)
 
 		// remove our finalizer from the list and update it
-		controllerutil.RemoveFinalizer(namespaceLabel, finalizerName)
+		controllerutil.RemoveFinalizer(namespaceLabel, NamespaceLabelFinalizer)
 		if err := r.Update(ctx, namespaceLabel); err != nil {
 			log.Error(err, "failed to update namespaceLabel")
 			return err
@@ -143,15 +141,14 @@ func (r *NamespaceLabelReconciler) deleteFinalizer(ctx context.Context, namespac
 	return nil
 }
 
-func (r *NamespaceLabelReconciler) addFinalizer(ctx context.Context, namespaceLabel *danaiov1alpha1.NamespaceLabel, namespace *v1.Namespace) error {
+func (r *NamespaceLabelReconciler) addFinalizer(ctx context.Context, namespaceLabel *danaiov1alpha1.NamespaceLabel) error {
 	// The object is not being deleted, so if it does not have our finalizer,
 	// then lets add the finalizer and update the object. This is equivalent
 	// registering our finalizer
 	log := log.FromContext(ctx)
 	log.Info("Handling finalizer addition")
-	finalizerName := NamespaceLabelFinalizer
-	if !controllerutil.ContainsFinalizer(namespaceLabel, finalizerName) {
-		controllerutil.AddFinalizer(namespaceLabel, finalizerName)
+	if !controllerutil.ContainsFinalizer(namespaceLabel, NamespaceLabelFinalizer) {
+		controllerutil.AddFinalizer(namespaceLabel, NamespaceLabelFinalizer)
 		if err := r.Update(ctx, namespaceLabel); err != nil {
 			log.Error(err, "failed to update namespaceLabel")
 			return err
@@ -203,12 +200,14 @@ func (r *NamespaceLabelReconciler) updateNSLabels(ctx context.Context, namespace
 		namespace.ObjectMeta.Labels = make(map[string]string)
 	}
 
-	for key, val := range addLabels {
-		namespace.ObjectMeta.Labels[key] = val
-	}
-
+	// first delete obsolete labels
 	for key := range delLabels {
 		delete(namespace.ObjectMeta.Labels, key)
+	}
+
+	// then add the needed labels
+	for key, val := range addLabels {
+		namespace.ObjectMeta.Labels[key] = val
 	}
 
 	// update the namespace with the new labels
